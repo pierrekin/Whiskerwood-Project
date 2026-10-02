@@ -570,32 +570,31 @@ static bool InstallCookedChunkFiles(
 	return true;
 }
 
-void ModActions::CookAndInstallMod(const FString& ModName)
+bool ModActions::PrepareModCook(const FString& ModName, FModCookJob& OutJob, FString& OutError)
 {
-	FModInfo Info;
-	if (!EnsureModInfo(ModName, Info)) return;
+	OutJob = FModCookJob();
+	OutJob.ModName = ModName;
 
-	const FString RunUAT = GetRunUATPath();
-	if (RunUAT.IsEmpty())
+	OutJob.RunUAT = GetRunUATPath();
+	if (OutJob.RunUAT.IsEmpty())
 	{
-		ShowNotification(TEXT("RunUAT.bat not found. Check Whiskerwood Mod Tools settings"), false);
-		return;
+		OutError = TEXT("RunUAT.bat not found. Check Whiskerwood Mod Tools settings");
+		return false;
 	}
 
-	const int32 ChunkId = GetChunkIdForMod(ModName);
-	if (ChunkId < 0)
+	OutJob.ChunkId = GetChunkIdForMod(ModName);
+	if (OutJob.ChunkId < 0)
 	{
-		ShowNotification(
-			FString::Printf(TEXT("Cannot find PAL_%s or its ChunkID"), *ModName), false);
-		return;
+		OutError = FString::Printf(TEXT("Cannot find PAL_%s or its ChunkID"), *ModName);
+		return false;
 	}
 
 	const FString ProjectPath =
 		FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
-	const FString OutputDir =
+	OutJob.OutputDir =
 		FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
 
-	const FString Args = FString::Printf(
+	OutJob.Args = FString::Printf(
 		TEXT("BuildCookRun"
 			" -project=\"%s\""
 			" -platform=Win64"
@@ -605,7 +604,152 @@ void ModActions::CookAndInstallMod(const FString& ModName)
 			" -nocompileeditor -installed -iterativecooking -cookincremental"
 			" -nop4 -utf8output -unattended"
 			" -WaitForUATMutex"),
-		*ProjectPath, *OutputDir);
+		*ProjectPath, *OutJob.OutputDir);
+	return true;
+}
+
+static bool ParseUATLine(const FString& Line, FString& OutStatus)
+{
+	if (Line.StartsWith(TEXT("[")))
+	{
+		int32 Slash, Close;
+		if (Line.FindChar('/', Slash) && Line.FindChar(']', Close) && Close > Slash)
+		{
+			const FString Rest = Line.Mid(Close + 1).TrimStart();
+			if (!Rest.IsEmpty())
+			{
+				OutStatus = Line.Left(Close + 1) + TEXT(" ") + Rest.Left(60);
+				return true;
+			}
+		}
+	}
+	if (Line.Contains(TEXT("LogCook:")) && Line.Contains(TEXT("Cooking")))
+	{
+		OutStatus = TEXT("Cooking assets...");
+		return true;
+	}
+	if (Line.Contains(TEXT("LogCook:")) && Line.Contains(TEXT("Finish")))
+	{
+		OutStatus = TEXT("Finalising cook...");
+		return true;
+	}
+	if (Line.Contains(TEXT("Stage:")) || Line.Contains(TEXT("Staging")))
+	{
+		OutStatus = TEXT("Staging files...");
+		return true;
+	}
+	if (Line.Contains(TEXT("Pak:")) || Line.Contains(TEXT("UnrealPak")))
+	{
+		OutStatus = TEXT("Building pak...");
+		return true;
+	}
+	if (Line.Contains(TEXT("Archive:")))
+	{
+		OutStatus = TEXT("Archiving...");
+		return true;
+	}
+	return false;
+}
+
+EModCookResult ModActions::RunModCook(
+	const FModCookJob& Job,
+	const TFunction<void(const FString&)>& OnStatus,
+	const TFunction<bool()>& ShouldCancel,
+	int32& OutInstalled,
+	FString& OutError)
+{
+	OutInstalled = 0;
+
+	void* PipeRead  = nullptr;
+	void* PipeWrite = nullptr;
+	FPlatformProcess::CreatePipe(PipeRead, PipeWrite);
+
+	FProcHandle Proc = FPlatformProcess::CreateProc(
+		*Job.RunUAT, *Job.Args,
+		false, true, true,
+		nullptr, 0, nullptr, PipeWrite, PipeRead);
+
+	if (!Proc.IsValid())
+	{
+		FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+		OutError = TEXT("Failed to launch RunUAT");
+		return EModCookResult::LaunchFailed;
+	}
+
+	bool bCancelled = false;
+	FString LastStatus;
+	auto ReadOutput = [&]()
+	{
+		const FString Chunk = FPlatformProcess::ReadPipe(PipeRead);
+		if (Chunk.IsEmpty()) return;
+
+		UE_LOG(LogWWModTools, Log, TEXT("[UAT] %s"), *Chunk);
+
+		TArray<FString> Lines;
+		Chunk.ParseIntoArrayLines(Lines);
+		for (const FString& Line : Lines)
+		{
+			FString Status;
+			if (ParseUATLine(Line.TrimStartAndEnd(), Status) && Status != LastStatus)
+			{
+				LastStatus = Status;
+				OnStatus(Status);
+			}
+		}
+	};
+
+	while (FPlatformProcess::IsProcRunning(Proc))
+	{
+		if (ShouldCancel())
+		{
+			FPlatformProcess::TerminateProc(Proc, true);
+			bCancelled = true;
+			break;
+		}
+
+		ReadOutput();
+		FPlatformProcess::Sleep(0.2f);
+	}
+	ReadOutput();
+
+	int32 ExitCode = 0;
+	FPlatformProcess::GetProcReturnCode(Proc, &ExitCode);
+	FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+	FPlatformProcess::CloseProc(Proc);
+
+	if (bCancelled)
+	{
+		UE_LOG(LogWWModTools, Warning, TEXT("Cook cancelled for '%s'"), *Job.ModName);
+		OutError = TEXT("Cancelled");
+		return EModCookResult::Cancelled;
+	}
+
+	if (ExitCode != 0)
+	{
+		OutError = FString::Printf(TEXT("Cook failed (exit %d). See output log!"), ExitCode);
+		return EModCookResult::CookFailed;
+	}
+
+	OnStatus(TEXT("Installing..."));
+
+	const FString PaksDir = Job.OutputDir / TEXT("Windows/Whiskerwood/Content/Paks");
+	return InstallCookedChunkFiles(Job.ModName, PaksDir, Job.ChunkId, OutInstalled, OutError)
+		? EModCookResult::Installed
+		: EModCookResult::InstallFailed;
+}
+
+void ModActions::CookAndInstallMod(const FString& ModName)
+{
+	FModInfo Info;
+	if (!EnsureModInfo(ModName, Info)) return;
+
+	FModCookJob Job;
+	FString PrepareError;
+	if (!PrepareModCook(ModName, Job, PrepareError))
+	{
+		ShowNotification(PrepareError, false);
+		return;
+	}
 
 	const TSharedRef<TAtomic<bool>, ESPMode::ThreadSafe> bCancelRequested =
 		MakeShared<TAtomic<bool>, ESPMode::ThreadSafe>(false);
@@ -632,52 +776,8 @@ void ModActions::CookAndInstallMod(const FString& ModName)
 
 	TWeakPtr<SNotificationItem> WeakNotif = Notification;
 
-	auto ParseUATLine = [](const FString& Line, FString& OutStatus) -> bool
-	{
-		if (Line.StartsWith(TEXT("[")))
-		{
-			int32 Slash, Close;
-			if (Line.FindChar('/', Slash) && Line.FindChar(']', Close) && Close > Slash)
-			{
-				const FString Rest = Line.Mid(Close + 1).TrimStart();
-				if (!Rest.IsEmpty())
-				{
-					OutStatus = Line.Left(Close + 1) + TEXT(" ") + Rest.Left(60);
-					return true;
-				}
-			}
-		}
-		if (Line.Contains(TEXT("LogCook:")) && Line.Contains(TEXT("Cooking")))
-		{
-			OutStatus = TEXT("Cooking assets...");
-			return true;
-		}
-		if (Line.Contains(TEXT("LogCook:")) && Line.Contains(TEXT("Finish")))
-		{
-			OutStatus = TEXT("Finalising cook...");
-			return true;
-		}
-		if (Line.Contains(TEXT("Stage:")) || Line.Contains(TEXT("Staging")))
-		{
-			OutStatus = TEXT("Staging files...");
-			return true;
-		}
-		if (Line.Contains(TEXT("Pak:")) || Line.Contains(TEXT("UnrealPak")))
-		{
-			OutStatus = TEXT("Building pak...");
-			return true;
-		}
-		if (Line.Contains(TEXT("Archive:")))
-		{
-			OutStatus = TEXT("Archiving...");
-			return true;
-		}
-		return false;
-	};
-
 	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask,
-		[RunUAT, Args, OutputDir, ModName, ChunkId,
-		 WeakNotif, ParseUATLine, bCancelRequested]()
+		[Job, WeakNotif, bCancelRequested]()
 	{
 		auto UpdateNotif = [&WeakNotif](const FString& Text)
 		{
@@ -704,86 +804,32 @@ void ModActions::CookAndInstallMod(const FString& ModName)
 			});
 		};
 
-		void* PipeRead  = nullptr;
-		void* PipeWrite = nullptr;
-		FPlatformProcess::CreatePipe(PipeRead, PipeWrite);
-
-		FProcHandle Proc = FPlatformProcess::CreateProc(
-			*RunUAT, *Args,
-			false, true, true,
-			nullptr, 0, nullptr, PipeWrite, PipeRead);
-
-		if (!Proc.IsValid())
-		{
-			FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
-			FinishNotif(TEXT("Failed to launch RunUAT"), false);
-			return;
-		}
-
-		FString LastStatus;
-		while (FPlatformProcess::IsProcRunning(Proc))
-		{
-			if (bCancelRequested->Load())
-			{
-				FPlatformProcess::TerminateProc(Proc, true);
-				break;
-			}
-
-			const FString Chunk = FPlatformProcess::ReadPipe(PipeRead);
-			if (!Chunk.IsEmpty())
-			{
-				UE_LOG(LogWWModTools, Log, TEXT("[UAT] %s"), *Chunk);
-
-				TArray<FString> Lines;
-				Chunk.ParseIntoArrayLines(Lines);
-				for (const FString& Line : Lines)
-				{
-					FString Status;
-					if (ParseUATLine(Line.TrimStartAndEnd(), Status) && Status != LastStatus)
-					{
-						LastStatus = Status;
-						UpdateNotif(FString::Printf(
-							TEXT("Cooking '%s'\n%s"), *ModName, *Status));
-					}
-				}
-			}
-			FPlatformProcess::Sleep(0.2f);
-		}
-
-		int32 ExitCode = 0;
-		FPlatformProcess::GetProcReturnCode(Proc, &ExitCode);
-		FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
-		FPlatformProcess::CloseProc(Proc);
-
-		if (bCancelRequested->Load())
-		{
-			FinishNotif(FString::Printf(TEXT("Cancelled '%s'"), *ModName), false);
-			UE_LOG(LogWWModTools, Warning, TEXT("Cook cancelled for '%s'"), *ModName);
-			return;
-		}
-
-		if (ExitCode != 0)
-		{
-			FinishNotif(
-				FString::Printf(TEXT("Cook failed (exit %d). See output log!"), ExitCode), false);
-			return;
-		}
-
-		UpdateNotif(FString::Printf(TEXT("Cooking '%s'\nInstalling..."), *ModName));
-
-		const FString PaksDir = OutputDir / TEXT("Windows/Whiskerwood/Content/Paks");
-
 		int32 Installed = 0;
-		FString InstallError;
-		if (!InstallCookedChunkFiles(ModName, PaksDir, ChunkId, Installed, InstallError))
-		{
-			FinishNotif(
-				FString::Printf(TEXT("'%s' install failed: %s"), *ModName, *InstallError),
-				false);
-			return;
-		}
+		FString Error;
+		const EModCookResult Result = RunModCook(Job,
+			[&](const FString& Status)
+			{
+				UpdateNotif(FString::Printf(TEXT("Cooking '%s'\n%s"), *Job.ModName, *Status));
+			},
+			[&]() { return bCancelRequested->Load(); },
+			Installed, Error);
 
-		FinishNotif(FString::Printf(TEXT("'%s' installed (%d file(s))"), *ModName, Installed), true);
+		switch (Result)
+		{
+		case EModCookResult::Installed:
+			FinishNotif(FString::Printf(TEXT("'%s' installed (%d file(s))"), *Job.ModName, Installed), true);
+			break;
+		case EModCookResult::Cancelled:
+			FinishNotif(FString::Printf(TEXT("Cancelled '%s'"), *Job.ModName), false);
+			break;
+		case EModCookResult::LaunchFailed:
+		case EModCookResult::CookFailed:
+			FinishNotif(Error, false);
+			break;
+		case EModCookResult::InstallFailed:
+			FinishNotif(FString::Printf(TEXT("'%s' install failed: %s"), *Job.ModName, *Error), false);
+			break;
+		}
 	});
 }
 
