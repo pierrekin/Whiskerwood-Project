@@ -40,6 +40,25 @@ struct FModInfo
 	bool Has(const FString& Key) const { return Values.Contains(Key); }
 };
 
+enum class EModCookResult
+{
+	Installed,
+	Cancelled,
+	LaunchFailed,
+	CookFailed,
+	InstallFailed,
+};
+
+// Everything a cook of one mod needs, worked out on the game thread before it starts
+struct FModCookJob
+{
+	FString ModName;
+	int32 ChunkId = -1;
+	FString RunUAT;
+	FString Args;
+	FString OutputDir;
+};
+
 namespace ModActions
 {
 	const TArray<FModFieldDef>& GetModFieldDefs();
@@ -56,6 +75,18 @@ namespace ModActions
 	bool CreateMod(const FModInfo& Info);
 
 	void CookAndInstallMod(const FString& ModName);
+
+	// Finds the mod's chunk and the UAT command that cooks it. Game thread only
+	bool PrepareModCook(const FString& ModName, FModCookJob& OutJob, FString& OutError);
+
+	// Runs the cook and installs the mod's chunk, on the calling thread. OnStatus gets short progress lines,
+	// and ShouldCancel is polled while UAT runs
+	EModCookResult RunModCook(
+		const FModCookJob& Job,
+		const TFunction<void(const FString&)>& OnStatus,
+		const TFunction<bool()>& ShouldCancel,
+		int32& OutInstalled,
+		FString& OutError);
 
 	void InstallMod(const FString& ModName);
 
