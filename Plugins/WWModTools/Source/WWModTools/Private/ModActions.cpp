@@ -443,7 +443,11 @@ static FString GetRunUATPath()
 	}
 
 	const FString EngineDir = FPaths::ConvertRelativePathToFull(FPaths::EngineDir());
+#if PLATFORM_WINDOWS
 	const FString Candidate = EngineDir / TEXT("Build/BatchFiles/RunUAT.bat");
+#else
+	const FString Candidate = EngineDir / TEXT("Build/BatchFiles/RunUAT.sh");
+#endif
 	if (FPaths::FileExists(Candidate)) return Candidate;
 
 	return FString();
@@ -487,6 +491,7 @@ static bool CopyInstalledFile(const FString& Src, const FString& Dest, FString& 
 		return true;
 	}
 
+#if PLATFORM_WINDOWS
 	// Fallback to cmd copy /Y
 	// bit nasty but does the job if fm can't do it
 	const FString CopyArgs = FString::Printf(
@@ -511,6 +516,9 @@ static bool CopyInstalledFile(const FString& Src, const FString& Dest, FString& 
 	{
 		OutError += TEXT(" ") + StdErr.TrimStartAndEnd();
 	}
+#else
+	OutError = FString::Printf(TEXT("Copy failed (IFileManager=%u)"), CopyResult);
+#endif
 
 	return false;
 }
@@ -584,7 +592,7 @@ bool ModActions::PrepareModCook(const FString& ModName, FModCookJob& OutJob, FSt
 	OutJob.RunUAT = GetRunUATPath();
 	if (OutJob.RunUAT.IsEmpty())
 	{
-		OutError = TEXT("RunUAT.bat not found. Check Whiskerwood Mod Tools settings");
+		OutError = TEXT("RunUAT not found. Check Whiskerwood Mod Tools settings");
 		return false;
 	}
 
