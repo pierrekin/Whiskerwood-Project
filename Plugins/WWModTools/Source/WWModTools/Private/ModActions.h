@@ -98,7 +98,10 @@ namespace ModActions
 
 	FString ModNameFromFolderPath(const FString& FolderPath);
 
+	// The folder the game loads mods from, for the launcher chosen in the settings. Empty when it cannot be found
 	FString GetModsInstallRoot();
+
+	bool ResolveModsInstallRoot(FString& OutRoot, FString& OutError);
 
 	FString GetSourceUPluginPath(const FString& ModName);
 

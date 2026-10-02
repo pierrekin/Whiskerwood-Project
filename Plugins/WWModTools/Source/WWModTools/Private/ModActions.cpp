@@ -26,6 +26,7 @@
 #include "Serialization/JsonWriter.h"
 #include "Serialization/JsonSerializer.h"
 #include "NewModDialog.h"
+#include "GameLaunchers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWWModTools, Log, All);
 
@@ -111,11 +112,18 @@ static int32 FindNextChunkId()
 	return -1;
 }
 
+bool ModActions::ResolveModsInstallRoot(FString& OutRoot, FString& OutError)
+{
+	FGameLaunch GameLaunch;
+	if (!GameLaunchers::Resolve(GameLaunch, OutError)) return false;
+	OutRoot = GameLaunch.ModsFolder;
+	return true;
+}
+
 FString ModActions::GetModsInstallRoot()
 {
-	const FString LocalAppData = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-	if (LocalAppData.IsEmpty()) return FString();
-	return LocalAppData / TEXT("Whiskerwood/Saved/mods");
+	FString Root, Error;
+	return ResolveModsInstallRoot(Root, Error) ? Root : FString();
 }
 
 FString ModActions::GetSourceUPluginPath(const FString& ModName)
@@ -507,7 +515,7 @@ static bool CopyInstalledFile(const FString& Src, const FString& Dest, FString& 
 	return false;
 }
 
-// Installs to %LOCALAPPDATA%/Whiskerwood/Saved/mods/<ModName>/:
+// Installs to <installed mods folder>/<ModName>/:
 //   pakchunk<Id>-Windows.pak -> <ModName>.pak
 //   Content/Mods/<ModName>/<ModName>.uplugin -> <ModName>.uplugin (generated with defaults if missing)
 static bool InstallCookedChunkFiles(
@@ -520,10 +528,9 @@ static bool InstallCookedChunkFiles(
 	OutInstalled = 0;
 	OutError.Reset();
 
-	const FString ModsRoot = ModActions::GetModsInstallRoot();
-	if (ModsRoot.IsEmpty())
+	FString ModsRoot;
+	if (!ModActions::ResolveModsInstallRoot(ModsRoot, OutError))
 	{
-		OutError = TEXT("Could not resolve %LOCALAPPDATA%");
 		return false;
 	}
 
@@ -863,10 +870,10 @@ void ModActions::InstallMod(const FString& ModName)
 
 void ModActions::UninstallMod(const FString& ModName)
 {
-	const FString ModsRoot = ModActions::GetModsInstallRoot();
-	if (ModsRoot.IsEmpty())
+	FString ModsRoot, ResolveError;
+	if (!ModActions::ResolveModsInstallRoot(ModsRoot, ResolveError))
 	{
-		ShowNotification(TEXT("Could not resolve %LOCALAPPDATA%"), false);
+		ShowNotification(ResolveError, false);
 		return;
 	}
 
@@ -894,10 +901,10 @@ void ModActions::UninstallMod(const FString& ModName)
 
 void ModActions::OpenInstalledModsDir()
 {
-	const FString ModsRoot = ModActions::GetModsInstallRoot();
-	if (ModsRoot.IsEmpty())
+	FString ModsRoot, ResolveError;
+	if (!ModActions::ResolveModsInstallRoot(ModsRoot, ResolveError))
 	{
-		ShowNotification(TEXT("Could not resolve %LOCALAPPDATA%"), false);
+		ShowNotification(ResolveError, false);
 		return;
 	}
 

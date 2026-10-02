@@ -13,10 +13,13 @@
 #include "Styling/SlateStyle.h"
 #include "Brushes/SlateImageBrush.h"
 #include "HAL/PlatformProcess.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "Interfaces/IPluginManager.h"
 
 #include "NewModDialog.h"
 #include "ModActions.h"
+#include "GameLaunchers.h"
 #include "WWModToolsSettings.h"
 
 class FWWModToolsModule : public IModuleInterface
@@ -114,18 +117,13 @@ private:
 
 	static void LaunchWhiskerwood()
 	{
-		const FString Args = TEXT("/C start \"\" \"steam://rungameid/2489330\"");
-		FPlatformProcess::CreateProc(
-			TEXT("cmd.exe"),
-			*Args,
-			true,
-			false,
-			false,
-			nullptr,
-			0,
-			nullptr,
-			nullptr,
-			nullptr);
+		FString Error;
+		if (!GameLaunchers::Launch(Error))
+		{
+			FNotificationInfo Info(FText::FromString(Error));
+			Info.ExpireDuration = 5.f;
+			FSlateNotificationManager::Get().AddNotification(Info);
+		}
 	}
 
 	TSharedRef<SWidget> BuildToolbarMenuWidget()
@@ -138,14 +136,14 @@ private:
 	void BuildModdingMenu(FMenuBuilder& Builder)
 	{
 		Builder.AddMenuEntry(
-			FText::FromString(TEXT("Launch Whiskerwood (steam only)")),
-			FText::FromString(TEXT("Run Steam game id 2489330")),
+			FText::FromString(TEXT("Launch Whiskerwood")),
+			FText::FromString(TEXT("Start Whiskerwood")),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateStatic(&FWWModToolsModule::LaunchWhiskerwood)));
 
 		Builder.AddMenuEntry(
 			FText::FromString(TEXT("Open Installed Mods Folder")),
-			FText::FromString(TEXT("Open %LOCALAPPDATA%/Whiskerwood/Saved/mods in Explorer")),
+			FText::FromString(TEXT("Open the folder the game loads mods from")),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateStatic(&ModActions::OpenInstalledModsDir)));
 
@@ -205,7 +203,7 @@ private:
 				Builder.AddMenuEntry(
 					FText::FromString(TEXT("Cook & Install")),
 					FText::FromString(FString::Printf(
-						TEXT("Package '%s' and copy to %%LOCALAPPDATA%%/Whiskerwood/Saved/mods"), *ModName)),
+						TEXT("Package '%s' and copy it to the installed mods folder"), *ModName)),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("MainFrame.PackageProject")),
 					FUIAction(FExecuteAction::CreateLambda([ModName]()
 					{
@@ -215,7 +213,7 @@ private:
 				Builder.AddMenuEntry(
 					FText::FromString(TEXT("Uninstall")),
 					FText::FromString(FString::Printf(
-						TEXT("Remove '%s' from %%LOCALAPPDATA%%/Whiskerwood/Saved/mods"), *ModName)),
+						TEXT("Remove '%s' from the installed mods folder"), *ModName)),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("Icons.Delete")),
 					FUIAction(FExecuteAction::CreateLambda([ModName]()
 					{
