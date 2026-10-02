@@ -613,7 +613,7 @@ bool ModActions::PrepareModCook(const FString& ModName, FModCookJob& OutJob, FSt
 			" -project=\"%s\""
 			" -platform=Win64"
 			" -clientconfig=Shipping"
-			" -build -cook -stage -pak"
+			" -cook -stage -pak -NoGameBinaries"
 			" -archive -archivedirectory=\"%s\""
 			" -nocompileeditor -installed -iterativecooking -cookincremental"
 			" -nop4 -utf8output -unattended"
