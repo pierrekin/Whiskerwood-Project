@@ -1,3 +1,4 @@
+using System.IO;
 using UnrealBuildTool;
 public class Suzie : ModuleRules
 {
@@ -32,6 +33,10 @@ public class Suzie : ModuleRules
 				"GameplayTags",
 			}
 			);
+
+		// The modkit engine adds hooks for the schema override and gameplay tags; a stock engine has neither
+		bool bModkitEngine = File.Exists(Path.Combine(EngineDirectory, "Source", "Runtime", "CoreUObject", "Public", "Serialization", "UnversionedSchemaOverride.h"));
+		PrivateDefinitions.Add("SUZIE_MODKIT_ENGINE=" + (bModkitEngine ? "1" : "0"));
 
 		DynamicallyLoadedModuleNames.AddRange(new string[] {});
 	}

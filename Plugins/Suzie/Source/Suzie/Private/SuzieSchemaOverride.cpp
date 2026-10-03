@@ -1,4 +1,7 @@
 #include "SuzieSchemaOverride.h"
+
+#if SUZIE_MODKIT_ENGINE
+
 #include "SuziePlugin.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -703,3 +706,5 @@ void FSuzieSchemaOverrides::DumpSchema(const TArray<FString>& Args)
         }
     }
 }
+
+#endif

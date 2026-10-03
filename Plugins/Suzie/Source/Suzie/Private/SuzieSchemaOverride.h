@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#if SUZIE_MODKIT_ENGINE
 #include "Serialization/UnversionedSchemaOverride.h"
 
 class FJsonObject;
@@ -96,3 +98,26 @@ private:
     // Game structs serialized natively in-game but generated as reflected structs in the editor
     TArray<FString> NativeSerializedGameStructs;
 };
+
+#else
+
+class FJsonObject;
+
+// A stock engine has no schema override hook, so there is nothing to register
+class FSuzieSchemaOverrides
+{
+public:
+    static FSuzieSchemaOverrides& Get()
+    {
+        static FSuzieSchemaOverrides Instance;
+        return Instance;
+    }
+
+    using FShadowPropertyBuilder = TFunction<FProperty*(FFieldVariant Owner, const TSharedPtr<FJsonObject>& PropertyJson)>;
+
+    void BuildFromJmap(const TSharedPtr<FJsonObject>& GlobalObjectMap, const FShadowPropertyBuilder& ShadowPropertyBuilder) {}
+    void RegisterProvider() {}
+    void UnregisterProvider() {}
+};
+
+#endif

@@ -73,6 +73,7 @@ void FSuzieGameplayTags::RegisterCollectedTags()
         return;
     }
 
+#if SUZIE_MODKIT_ENGINE
     // Native registration was sealed during the OnPostEngineInit broadcast (before this editor
     // module loads), so the legacy FName path and FNativeGameplayTag both fail here. The editor-only
     // injection path stores the tags so they survive every later tag tree reconstruction.
@@ -82,6 +83,7 @@ void FSuzieGameplayTags::RegisterCollectedTags()
     UE_LOG(LogSuzie, Display, TEXT("Registered %d native gameplay tags from jmap"), CollectedTagNames.Num());
 
     WriteRegisteredTagsReport(Manager);
+#endif
 }
 
 void FSuzieGameplayTags::WriteRegisteredTagsReport(const UGameplayTagsManager& Manager) const
