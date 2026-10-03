@@ -46,6 +46,7 @@ enum class EModCookResult
 	Cancelled,
 	LaunchFailed,
 	CookFailed,
+	MaterialsFailed,
 	InstallFailed,
 };
 
@@ -57,6 +58,10 @@ struct FModCookJob
 	FString RunUAT;
 	FString Args;
 	FString OutputDir;
+	// The mod's materials that carry their own shader maps, as long package names, checked in the cook's output
+	TArray<FString> MaterialPackages;
+	// What the materials' settings will get wrong in the game, though they cook
+	TArray<FString> Warnings;
 };
 
 namespace ModActions

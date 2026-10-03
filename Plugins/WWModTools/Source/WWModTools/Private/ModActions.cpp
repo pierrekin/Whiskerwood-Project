@@ -7,12 +7,15 @@
 #include "IAssetTools.h"
 #include "Engine/DataAsset.h"
 #include "Engine/PrimaryAssetLabel.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Factories/BlueprintFactory.h"
 #include "Factories/DataAssetFactory.h"
 #include "WidgetBlueprintFactory.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Misc/PackageName.h"
+#include "Misc/App.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
@@ -584,6 +587,102 @@ static bool InstallCookedChunkFiles(
 	return true;
 }
 
+// Materials and material instances with a static permutation of their own carry shader maps; other
+// instances use their parent's. A material not marked for instanced static meshes cooks without
+// shaders for them, and the 5.8 game draws what the player places in the grid that way, so those
+// placed objects come out as the default checker while the build preview looks right.
+static void FindModMaterials(const FString& ModName, TArray<FString>& OutPackages, TArray<FString>& OutWarnings)
+{
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+
+	FARFilter Filter;
+	Filter.PackagePaths.Add(*FString::Printf(TEXT("/Game/Mods/%s"), *ModName));
+	Filter.bRecursivePaths = true;
+	Filter.ClassPaths.Add(UMaterial::StaticClass()->GetClassPathName());
+	Filter.ClassPaths.Add(UMaterialInstanceConstant::StaticClass()->GetClassPathName());
+
+	TArray<FAssetData> Assets;
+	AssetRegistry.GetAssets(Filter, Assets);
+	for (const FAssetData& Asset : Assets)
+	{
+		UObject* Object = Asset.GetAsset();
+		if (const UMaterial* Material = Cast<UMaterial>(Object))
+		{
+			OutPackages.Add(Asset.PackageName.ToString());
+			if (!Material->bUsedWithInstancedStaticMeshes)
+			{
+				OutWarnings.Add(FString::Printf(
+					TEXT("%s is not marked Used with Instanced Static Meshes, so anything the game places in the grid draws it as the default checker"),
+					*Asset.PackageName.ToString()));
+			}
+		}
+		else if (const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Object))
+		{
+			if (Instance->bHasStaticPermutationResource)
+			{
+				OutPackages.Add(Asset.PackageName.ToString());
+			}
+		}
+	}
+}
+
+// The game draws with D3D12 and SM6 shaders, or D3D11 or an older GPU with SM5, so a material needs
+// both shader maps in its cooked package
+static bool CheckCookedMaterials(const TArray<FString>& Packages, FString& OutError)
+{
+	const FString CookedContent = FPaths::ConvertRelativePathToFull(
+		FPaths::ProjectSavedDir() / TEXT("Cooked/Windows") / FApp::GetProjectName() / TEXT("Content"));
+	static const ANSICHAR* Platforms[] = { "PCD3D_SM5", "PCD3D_SM6" };
+
+	TArray<FString> Problems;
+	for (const FString& Package : Packages)
+	{
+		const FString Base = CookedContent / Package.RightChop(FCString::Strlen(TEXT("/Game/")));
+		TArray<uint8> Bytes;
+		for (const TCHAR* Extension : { TEXT(".uasset"), TEXT(".uexp") })
+		{
+			TArray<uint8> Part;
+			if (FFileHelper::LoadFileToArray(Part, *(Base + Extension), FILEREAD_Silent))
+			{
+				Bytes.Append(Part);
+			}
+		}
+		if (Bytes.IsEmpty())
+		{
+			Problems.Add(FString::Printf(TEXT("%s was not cooked (%s)"), *Package, *Base));
+			continue;
+		}
+
+		TArray<FString> Missing;
+		for (const ANSICHAR* Platform : Platforms)
+		{
+			const int32 Length = FCStringAnsi::Strlen(Platform);
+			bool bFound = false;
+			for (int32 i = 0; !bFound && i + Length <= Bytes.Num(); ++i)
+			{
+				bFound = FMemory::Memcmp(Bytes.GetData() + i, Platform, Length) == 0;
+			}
+			if (!bFound)
+			{
+				Missing.Add(UTF8_TO_TCHAR(Platform));
+			}
+		}
+		if (!Missing.IsEmpty())
+		{
+			Problems.Add(FString::Printf(TEXT("%s has no %s shader map"), *Package, *FString::Join(Missing, TEXT(" or "))));
+		}
+	}
+
+	if (Problems.IsEmpty())
+	{
+		return true;
+	}
+	OutError = FString::Printf(TEXT("The game cannot draw these materials, so nothing was installed:\n%s"),
+		*FString::Join(Problems, TEXT("\n")));
+	return false;
+}
+
 bool ModActions::PrepareModCook(const FString& ModName, FModCookJob& OutJob, FString& OutError)
 {
 	OutJob = FModCookJob();
@@ -602,6 +701,8 @@ bool ModActions::PrepareModCook(const FString& ModName, FModCookJob& OutJob, FSt
 		OutError = FString::Printf(TEXT("Cannot find PAL_%s or its ChunkID"), *ModName);
 		return false;
 	}
+
+	FindModMaterials(ModName, OutJob.MaterialPackages, OutJob.Warnings);
 
 	const FString ProjectPath =
 		FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
@@ -744,6 +845,18 @@ EModCookResult ModActions::RunModCook(
 		return EModCookResult::CookFailed;
 	}
 
+	for (const FString& Warning : Job.Warnings)
+	{
+		UE_LOG(LogWWModTools, Warning, TEXT("%s"), *Warning);
+	}
+
+	OnStatus(TEXT("Checking materials..."));
+	if (!CheckCookedMaterials(Job.MaterialPackages, OutError))
+	{
+		UE_LOG(LogWWModTools, Error, TEXT("%s"), *OutError);
+		return EModCookResult::MaterialsFailed;
+	}
+
 	OnStatus(TEXT("Installing..."));
 
 	const FString PaksDir = Job.OutputDir / TEXT("Windows/Whiskerwood/Content/Paks");
@@ -831,13 +944,17 @@ void ModActions::CookAndInstallMod(const FString& ModName)
 		switch (Result)
 		{
 		case EModCookResult::Installed:
-			FinishNotif(FString::Printf(TEXT("'%s' installed (%d file(s))"), *Job.ModName, Installed), true);
+			FinishNotif(Job.Warnings.IsEmpty()
+				? FString::Printf(TEXT("'%s' installed (%d file(s))"), *Job.ModName, Installed)
+				: FString::Printf(TEXT("'%s' installed (%d file(s)), with %d warning(s) in the Output Log"), *Job.ModName, Installed, Job.Warnings.Num()),
+				true);
 			break;
 		case EModCookResult::Cancelled:
 			FinishNotif(FString::Printf(TEXT("Cancelled '%s'"), *Job.ModName), false);
 			break;
 		case EModCookResult::LaunchFailed:
 		case EModCookResult::CookFailed:
+		case EModCookResult::MaterialsFailed:
 			FinishNotif(Error, false);
 			break;
 		case EModCookResult::InstallFailed:
