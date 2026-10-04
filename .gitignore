@@ -47,6 +47,7 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 Content/_TempFiles/*
-# Linux builds of the project and its plugins
-Binaries/Linux/
-Plugins/*/Binaries/Linux/
+*.debug
+*.sym
+!Binaries/Linux/*.so
+!Plugins/*/Binaries/Linux/*.so
