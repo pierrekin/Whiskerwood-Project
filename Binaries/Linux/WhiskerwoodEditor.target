@@ -20,7 +20,7 @@
 		"IsLicenseeVersion": 0,
 		"IsPromotedBuild": 0,
 		"BranchName": "UE5",
-		"BuildId": "5a1602df-f593-48b3-9a79-a804665c9abc"
+		"BuildId": "0d55b7dd-1c60-41c8-891a-85c070a15a56"
 	},
 	"BuildProducts": [
 		{
@@ -7813,38 +7813,6 @@
 		},
 		{
 			"Path": "$(ProjectDir)/Binaries/Linux/libUnrealEditor-Whiskerwood.sym",
-			"Type": "SymbolFile"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomDev/Binaries/Linux/UnrealEditor.modules",
-			"Type": "RequiredResource"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomDev/Binaries/Linux/libUnrealEditor-LoomDev.debug",
-			"Type": "SymbolFile"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomDev/Binaries/Linux/libUnrealEditor-LoomDev.so",
-			"Type": "DynamicLibrary"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomDev/Binaries/Linux/libUnrealEditor-LoomDev.sym",
-			"Type": "SymbolFile"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomEditor/Binaries/Linux/UnrealEditor.modules",
-			"Type": "RequiredResource"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomEditor/Binaries/Linux/libUnrealEditor-LoomEditor.debug",
-			"Type": "SymbolFile"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomEditor/Binaries/Linux/libUnrealEditor-LoomEditor.so",
-			"Type": "DynamicLibrary"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomEditor/Binaries/Linux/libUnrealEditor-LoomEditor.sym",
 			"Type": "SymbolFile"
 		},
 		{
@@ -26102,14 +26070,6 @@
 			"Type": "UFS"
 		},
 		{
-			"Path": "$(ProjectDir)/Plugins/LoomDev/LoomDev.uplugin",
-			"Type": "UFS"
-		},
-		{
-			"Path": "$(ProjectDir)/Plugins/LoomEditor/LoomEditor.uplugin",
-			"Type": "UFS"
-		},
-		{
 			"Path": "$(ProjectDir)/Plugins/Suzie/Suzie.uplugin",
 			"Type": "UFS"
 		},
@@ -26225,8 +26185,6 @@
 		"LightMixer",
 		"LiveCodingToolset",
 		"LocalizableMessage",
-		"LoomDev",
-		"LoomEditor",
 		"MCPClientToolset",
 		"MP4Utilities",
 		"MVVMToolset",
