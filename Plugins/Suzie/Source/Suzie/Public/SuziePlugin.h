@@ -4,8 +4,32 @@
 #include "Modules/ModuleManager.h"
 #include "Styling/SlateStyle.h"
 #include "Framework/Commands/UICommandList.h"
+#include "UObject/Field.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSuzie, Log, All);
+
+// Hooks for modules that work with the types Suzie makes, such as one that loads the game's cooked
+// assets. Suzie starts in PostEngineInit, so bind them in an earlier phase
+struct SUZIE_API FSuzieDelegates
+{
+    // Builds a property from a jmap property descriptor as Suzie does. Only valid during OnJmapProcessed
+    using FPropertyBuilder = TFunction<FProperty*(FFieldVariant Owner, const TSharedPtr<FJsonObject>& PropertyJson)>;
+    DECLARE_MULTICAST_DELEGATE_TwoParams(FOnJmapProcessed, const TSharedPtr<FJsonObject>& /*GlobalObjectMap*/, const FPropertyBuilder& /*PropertyBuilder*/);
+
+    // Broadcast for each jmap once its types are made, with its objects
+    static FOnJmapProcessed OnJmapProcessed;
+
+    // Broadcast once every jmap is processed, at the end of StartupModule
+    static FSimpleMulticastDelegate OnAllJmapsProcessed;
+
+    // Serializes one value of a struct in the game's own format, loading or saving. Returns false to
+    // fall back to the default serialization
+    using FStructSerializeFn = bool (*)(FArchive& Ar, void* Data, UScriptStruct* Struct);
+    DECLARE_DELEGATE_RetVal_OneParam(FStructSerializeFn, FFindStructSerializer, const FString& /*StructPath*/);
+
+    // Returns the serializer for a struct Suzie is making, by its path, or nullptr
+    static FFindStructSerializer FindStructSerializer;
+};
 
 struct FDynamicClassGenerationContext
 {
