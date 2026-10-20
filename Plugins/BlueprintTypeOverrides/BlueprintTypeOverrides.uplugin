@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Blueprint Type Overrides",
+	"Description": "Changes the types of a game's cooked Blueprints in memory when the editor starts, as the project's Config/BlueprintTypeOverrides.json lists them, so the project's own Blueprints can be built as the game runs them.",
+	"Category": "Editor",
+	"CanContainContent": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "BlueprintTypeOverrides",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
