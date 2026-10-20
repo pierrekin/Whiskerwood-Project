@@ -16,6 +16,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "CookedContent",
+			"Enabled": true
+		},
+		{
 			"Name": "WWModTools",
 			"Enabled": true
 		},

@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Cooked Content",
+	"Description": "Makes a game's cooked content load and read correctly in an editor whose native types Suzie builds from the game's jmap: game-accurate unversioned schemas, hand-written serializers of natively serialized structs, the game's gameplay tags, and the registration of Suzie's classes with the IoStore loader.",
+	"Category": "Editor",
+	"CanContainContent": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "CookedContent",
+			"Type": "Editor",
+			"LoadingPhase": "PostDefault"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Suzie",
+			"Enabled": true
+		}
+	]
+}
